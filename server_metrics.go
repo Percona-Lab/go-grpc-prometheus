@@ -36,7 +36,7 @@ func NewServerMetrics(counterOpts ...CounterOption) *ServerMetrics {
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_handled_total",
 				Help: "Total number of RPCs completed on the server, regardless of success or failure.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method", "grpc_code"}),
+			}), []string{"grpc_type", "grpc_service", "grpc_method", "grpc_code", "source"}),
 		serverStreamMsgReceived: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_msg_received_total",
@@ -107,7 +107,7 @@ func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req i
 		monitor.ReceivedMessage()
 		resp, err := handler(ctx, req)
 		st, _ := grpcstatus.FromError(err)
-		monitor.Handled(st.Code())
+		monitor.Handled(st.Code(), GetSourceFromCtx(ctx))
 		if err == nil {
 			monitor.SentMessage()
 		}
@@ -121,7 +121,7 @@ func (m *ServerMetrics) StreamServerInterceptor() func(srv interface{}, ss grpc.
 		monitor := newServerReporter(m, streamRPCType(info), info.FullMethod)
 		err := handler(srv, &monitoredServerStream{ss, monitor})
 		st, _ := grpcstatus.FromError(err)
-		monitor.Handled(st.Code())
+		monitor.Handled(st.Code(), Internal)
 		return err
 	}
 }
@@ -180,7 +180,9 @@ func preRegisterMethod(metrics *ServerMetrics, serviceName string, mInfo *grpc.M
 	if metrics.serverHandledHistogramEnabled {
 		metrics.serverHandledHistogram.GetMetricWithLabelValues(methodType, serviceName, methodName)
 	}
-	for _, code := range allCodes {
-		metrics.serverHandledCounter.GetMetricWithLabelValues(methodType, serviceName, methodName, code.String())
+	for _, source := range allSources {
+		for _, code := range allCodes {
+			metrics.serverHandledCounter.GetMetricWithLabelValues(methodType, serviceName, methodName, code.String(), source.String())
+		}
 	}
 }
