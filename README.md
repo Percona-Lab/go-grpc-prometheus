@@ -131,7 +131,7 @@ After the call completes, its status (`OK` or other [gRPC status code](https://g
 and the relevant call labels increment the `grpc_server_handled_total` counter.
 
 ```jsoniq
-grpc_server_handled_total{grpc_code="OK",grpc_method="PingList",grpc_service="mwitkow.testproto.TestService",grpc_type="server_stream"} 1
+grpc_server_handled_total{grpc_code="OK",grpc_method="PingList",grpc_service="mwitkow.testproto.TestService",grpc_type="server_stream",source="internal"} 1
 ```
 
 ## Histograms
