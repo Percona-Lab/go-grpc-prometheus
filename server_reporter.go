@@ -4,6 +4,7 @@
 package grpc_prometheus
 
 import (
+	"context"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -30,12 +31,16 @@ func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string) *s
 	return r
 }
 
-func (r *serverReporter) ReceivedMessage() {
-	r.metrics.serverStreamMsgReceived.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Inc()
+func (r *serverReporter) ReceivedMessage(ctx context.Context) {
+	customLabelValues := r.metrics.extension.ServerReceivedMessageValues(ctx)
+	labels := append(customLabelValues, string(r.rpcType), r.serviceName, r.methodName)
+	r.metrics.serverStreamMsgReceived.WithLabelValues(labels...).Inc()
 }
 
-func (r *serverReporter) SentMessage() {
-	r.metrics.serverStreamMsgSent.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Inc()
+func (r *serverReporter) SentMessage(ctx context.Context) {
+	customLabelValues := r.metrics.extension.ServerSentMessageValues(ctx)
+	labels := append(customLabelValues, string(r.rpcType), r.serviceName, r.methodName)
+	r.metrics.serverStreamMsgSent.WithLabelValues(labels...).Inc()
 }
 
 func (r *serverReporter) Handled(code codes.Code) {
