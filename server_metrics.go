@@ -8,9 +8,12 @@ import (
 	"google.golang.org/grpc"
 )
 
+var emptyExtension = &defaultExtension{}
+
 // ServerMetrics represents a collection of metrics to be registered on a
 // Prometheus metrics registry for a gRPC server.
 type ServerMetrics struct {
+	extension                     Extension
 	serverStartedCounter          *prom.CounterVec
 	serverHandledCounter          *prom.CounterVec
 	serverStreamMsgReceived       *prom.CounterVec
@@ -25,8 +28,13 @@ type ServerMetrics struct {
 // example when wanting to control which metrics are added to a registry as
 // opposed to automatically adding metrics via init functions.
 func NewServerMetrics(counterOpts ...CounterOption) *ServerMetrics {
+	return NewServerMetricsWithExtension(emptyExtension, counterOpts...)
+}
+
+func NewServerMetricsWithExtension(extension Extension, counterOpts ...CounterOption) *ServerMetrics {
 	opts := counterOptions(counterOpts)
 	return &ServerMetrics{
+		extension: extension,
 		serverStartedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_started_total",
@@ -41,12 +49,12 @@ func NewServerMetrics(counterOpts ...CounterOption) *ServerMetrics {
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_msg_received_total",
 				Help: "Total number of RPC stream messages received on the server.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method"}),
+			}), append(extension.ServerReceivedMessageCustomLabels(), "grpc_type", "grpc_service", "grpc_method")),
 		serverStreamMsgSent: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_msg_sent_total",
 				Help: "Total number of gRPC stream messages sent by the server.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method"}),
+			}), append(extension.ServerSentMessageCustomLabels(), "grpc_type", "grpc_service", "grpc_method")),
 		serverHandledHistogramEnabled: false,
 		serverHandledHistogramOpts: prom.HistogramOpts{
 			Name:    "grpc_server_handling_seconds",
@@ -104,12 +112,12 @@ func (m *ServerMetrics) Collect(ch chan<- prom.Metric) {
 func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		monitor := newServerReporter(m, Unary, info.FullMethod)
-		monitor.ReceivedMessage()
+		monitor.ReceivedMessage(ctx)
 		resp, err := handler(ctx, req)
 		st, _ := grpcstatus.FromError(err)
 		monitor.Handled(st.Code())
 		if err == nil {
-			monitor.SentMessage()
+			monitor.SentMessage(ctx)
 		}
 		return resp, err
 	}
@@ -133,7 +141,16 @@ func (m *ServerMetrics) InitializeMetrics(server *grpc.Server) {
 	serviceInfo := server.GetServiceInfo()
 	for serviceName, info := range serviceInfo {
 		for _, mInfo := range info.Methods {
-			preRegisterMethod(m, serviceName, &mInfo)
+			preRegisterMethod(m, serviceName, &mInfo, emptyExtension)
+		}
+	}
+}
+
+func (m *ServerMetrics) InitializeMetricsWithExtension(server *grpc.Server, extension Extension) {
+	serviceInfo := server.GetServiceInfo()
+	for serviceName, info := range serviceInfo {
+		for _, mInfo := range info.Methods {
+			preRegisterMethod(m, serviceName, &mInfo, extension)
 		}
 	}
 }
@@ -156,7 +173,7 @@ type monitoredServerStream struct {
 func (s *monitoredServerStream) SendMsg(m interface{}) error {
 	err := s.ServerStream.SendMsg(m)
 	if err == nil {
-		s.monitor.SentMessage()
+		s.monitor.SentMessage(context.Background())
 	}
 	return err
 }
@@ -164,19 +181,28 @@ func (s *monitoredServerStream) SendMsg(m interface{}) error {
 func (s *monitoredServerStream) RecvMsg(m interface{}) error {
 	err := s.ServerStream.RecvMsg(m)
 	if err == nil {
-		s.monitor.ReceivedMessage()
+		s.monitor.ReceivedMessage(context.Background())
 	}
 	return err
 }
 
-// preRegisterMethod is invoked on Register of a Server, allowing all gRPC services labels to be pre-populated.
-func preRegisterMethod(metrics *ServerMetrics, serviceName string, mInfo *grpc.MethodInfo) {
+func preRegisterMethod(metrics *ServerMetrics, serviceName string, mInfo *grpc.MethodInfo, extension Extension) {
 	methodName := mInfo.Name
 	methodType := string(typeFromMethodInfo(mInfo))
 	// These are just references (no increments), as just referencing will create the labels but not set values.
 	metrics.serverStartedCounter.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	metrics.serverStreamMsgReceived.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	metrics.serverStreamMsgSent.GetMetricWithLabelValues(methodType, serviceName, methodName)
+	metrics.serverStreamMsgReceived.GetMetricWithLabelValues(
+		append(
+			extension.ServerReceivedMessageValues(context.Background()),
+			methodType, serviceName, methodName,
+		)...,
+	)
+	metrics.serverStreamMsgSent.GetMetricWithLabelValues(
+		append(
+			extension.ServerSentMessageValues(context.Background()),
+			serviceName, methodName,
+		)...,
+	)
 	if metrics.serverHandledHistogramEnabled {
 		metrics.serverHandledHistogram.GetMetricWithLabelValues(methodType, serviceName, methodName)
 	}
