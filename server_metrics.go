@@ -108,29 +108,25 @@ func (m *ServerMetrics) Collect(ch chan<- prom.Metric) {
 }
 
 // UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		monitor := newServerReporter(m, ctx, Unary, info.FullMethod)
-		monitor.ReceivedMessage(ctx)
-		resp, err := handler(ctx, req)
-		st, _ := grpcstatus.FromError(err)
-		monitor.Handled(ctx, st.Code())
-		if err == nil {
-			monitor.SentMessage(ctx)
-		}
-		return resp, err
+func (m *ServerMetrics) UnaryServerInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	monitor := newServerReporter(m, ctx, Unary, info.FullMethod)
+	monitor.ReceivedMessage(ctx)
+	resp, err := handler(ctx, req)
+	st, _ := grpcstatus.FromError(err)
+	monitor.Handled(ctx, st.Code())
+	if err == nil {
+		monitor.SentMessage(ctx)
 	}
+	return resp, err
 }
 
 // StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-func (m *ServerMetrics) StreamServerInterceptor() func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		monitor := newServerReporter(m, ss.Context(), streamRPCType(info), info.FullMethod)
-		err := handler(srv, &monitoredServerStream{ss, monitor})
-		st, _ := grpcstatus.FromError(err)
-		monitor.Handled(ss.Context(), st.Code())
-		return err
-	}
+func (m *ServerMetrics) StreamServerInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	monitor := newServerReporter(m, ss.Context(), streamRPCType(info), info.FullMethod)
+	err := handler(srv, &monitoredServerStream{ss, monitor})
+	st, _ := grpcstatus.FromError(err)
+	monitor.Handled(ss.Context(), st.Code())
+	return err
 }
 
 // InitializeMetrics initializes all metrics, with their appropriate null

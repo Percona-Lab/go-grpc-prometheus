@@ -6,6 +6,7 @@
 package grpc_prometheus
 
 import (
+	"context"
 	"sync"
 
 	prom "github.com/prometheus/client_golang/prometheus"
@@ -31,13 +32,13 @@ func DefaultServerMetrics() *ServerMetrics {
 }
 
 // UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return DefaultServerMetrics().UnaryServerInterceptor()
+func UnaryServerInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return DefaultServerMetrics().UnaryServerInterceptor(ctx, req, info, handler)
 }
 
 // StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-func StreamServerInterceptor() grpc.StreamServerInterceptor {
-	return DefaultServerMetrics().StreamServerInterceptor()
+func StreamServerInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return DefaultServerMetrics().StreamServerInterceptor(srv, ss, info, handler)
 }
 
 func PrometheusMustRegister(serverMetrics *ServerMetrics) {
@@ -59,11 +60,11 @@ func Register(server *grpc.Server) {
 // of RPCs. Histogram metrics can be very expensive for Prometheus
 // to retain and query. This function acts on the DefaultServerMetrics
 // variable and the default Prometheus metrics registry.
-func DefaultEnableHandlingTimeHistogram(opts ...HistogramOption) {
-	EnableHandlingTimeHistogram(DefaultServerMetrics(), opts...)
+func EnableHandlingTimeHistogram(opts ...HistogramOption) {
+	CustomEnableHandlingTimeHistogram(DefaultServerMetrics(), opts...)
 }
 
-func EnableHandlingTimeHistogram(serverMetrics *ServerMetrics, opts ...HistogramOption) {
+func CustomEnableHandlingTimeHistogram(serverMetrics *ServerMetrics, opts ...HistogramOption) {
 	serverMetrics.EnableHandlingTimeHistogram(opts...)
 	prom.Register(serverMetrics.serverHandledHistogram)
 }
