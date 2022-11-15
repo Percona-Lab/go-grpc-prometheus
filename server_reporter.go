@@ -18,7 +18,7 @@ type serverReporter struct {
 	startTime   time.Time
 }
 
-func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string) *serverReporter {
+func newServerReporter(m *ServerMetrics, ctx context.Context, rpcType grpcType, fullMethod string) *serverReporter {
 	r := &serverReporter{
 		metrics: m,
 		rpcType: rpcType,
@@ -27,25 +27,37 @@ func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string) *s
 		r.startTime = time.Now()
 	}
 	r.serviceName, r.methodName = splitMethodName(fullMethod)
-	r.metrics.serverStartedCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Inc()
+	r.metrics.serverStartedCounter.WithLabelValues(append(
+		r.metrics.extension.ServerStartedCounterValues(ctx),
+		string(r.rpcType), r.serviceName, r.methodName)...,
+	).Inc()
 	return r
 }
 
 func (r *serverReporter) ReceivedMessage(ctx context.Context) {
-	customLabelValues := r.metrics.extension.ServerReceivedMessageValues(ctx)
-	labels := append(customLabelValues, string(r.rpcType), r.serviceName, r.methodName)
-	r.metrics.serverStreamMsgReceived.WithLabelValues(labels...).Inc()
+	r.metrics.serverStreamMsgReceivedCounter.WithLabelValues(append(
+		r.metrics.extension.ServerStreamMsgReceivedCounterValues(ctx),
+		string(r.rpcType), r.serviceName, r.methodName)...,
+	).Inc()
 }
 
 func (r *serverReporter) SentMessage(ctx context.Context) {
-	customLabelValues := r.metrics.extension.ServerSentMessageValues(ctx)
-	labels := append(customLabelValues, string(r.rpcType), r.serviceName, r.methodName)
-	r.metrics.serverStreamMsgSent.WithLabelValues(labels...).Inc()
+	r.metrics.serverStreamMsgSentCounter.WithLabelValues(append(
+		r.metrics.extension.ServerStreamMsgSentCounterValues(ctx),
+		string(r.rpcType), r.serviceName, r.methodName)...,
+	).Inc()
 }
 
-func (r *serverReporter) Handled(code codes.Code) {
-	r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String()).Inc()
+func (r *serverReporter) Handled(ctx context.Context, code codes.Code) {
+	r.metrics.serverHandledCounter.WithLabelValues(append(
+		r.metrics.extension.ServerHandledCounterValues(ctx),
+		string(r.rpcType), r.serviceName, r.methodName, code.String())...,
+	).Inc()
+
 	if r.metrics.serverHandledHistogramEnabled {
-		r.metrics.serverHandledHistogram.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Observe(time.Since(r.startTime).Seconds())
+		r.metrics.serverHandledHistogram.WithLabelValues(append(
+			r.metrics.extension.ServerHandledHistogramValues(ctx),
+			string(r.rpcType), r.serviceName, r.methodName)...,
+		).Observe(time.Since(r.startTime).Seconds())
 	}
 }

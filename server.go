@@ -6,44 +6,45 @@
 package grpc_prometheus
 
 import (
-	"context"
+	"sync"
+
 	prom "github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 )
 
 var (
-	// DefaultServerMetrics is the default instance of ServerMetrics. It is
+	// defaultServerMetrics is the default instance of ServerMetrics. It is
 	// intended to be used in conjunction the default Prometheus metrics
 	// registry.
-	DefaultServerMetrics *ServerMetrics
-
-	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-	UnaryServerInterceptor func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error)
-
-	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-	StreamServerInterceptor func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error
+	defaultServerMetrics     *ServerMetrics
+	defaultServerMetricsOnce sync.Once
 )
 
-func Configure() {
-	ConfigureWithExtension(emptyExtension)
+func DefaultServerMetrics() *ServerMetrics {
+	defaultServerMetricsOnce.Do(func() {
+		defaultServerMetrics = NewServerMetrics()
+
+		PrometheusMustRegister(defaultServerMetrics)
+	})
+
+	return defaultServerMetrics
 }
 
-func ConfigureWithExtension(extension Extension) {
-	// DefaultServerMetrics is the default instance of ServerMetrics. It is
-	// intended to be used in conjunction the default Prometheus metrics
-	// registry.
-	DefaultServerMetrics = NewServerMetricsWithExtension(extension)
+// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
+func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return DefaultServerMetrics().UnaryServerInterceptor()
+}
 
-	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-	UnaryServerInterceptor = DefaultServerMetrics.UnaryServerInterceptor()
+// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
+func StreamServerInterceptor() grpc.StreamServerInterceptor {
+	return DefaultServerMetrics().StreamServerInterceptor()
+}
 
-	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-	StreamServerInterceptor = DefaultServerMetrics.StreamServerInterceptor()
-
-	prom.MustRegister(DefaultServerMetrics.serverStartedCounter)
-	prom.MustRegister(DefaultServerMetrics.serverHandledCounter)
-	prom.MustRegister(DefaultServerMetrics.serverStreamMsgReceived)
-	prom.MustRegister(DefaultServerMetrics.serverStreamMsgSent)
+func PrometheusMustRegister(serverMetrics *ServerMetrics) {
+	prom.MustRegister(serverMetrics.serverStartedCounter)
+	prom.MustRegister(serverMetrics.serverHandledCounter)
+	prom.MustRegister(serverMetrics.serverStreamMsgReceivedCounter)
+	prom.MustRegister(serverMetrics.serverStreamMsgSentCounter)
 }
 
 // Register takes a gRPC server and pre-initializes all counters to 0. This
@@ -51,21 +52,18 @@ func ConfigureWithExtension(extension Extension) {
 // be called *after* all services have been registered with the server. This
 // function acts on the DefaultServerMetrics variable.
 func Register(server *grpc.Server) {
-	DefaultServerMetrics.InitializeMetrics(server)
+	DefaultServerMetrics().InitializeMetrics(server)
 }
 
-func RegisterWithExtension(server *grpc.Server, extension Extension) {
-	if DefaultServerMetrics == nil {
-		Configure()
-	}
-	DefaultServerMetrics.InitializeMetricsWithExtension(server, extension)
-}
-
-// EnableHandlingTimeHistogram turns on recording of handling time
+// DefaultEnableHandlingTimeHistogram turns on recording of handling time
 // of RPCs. Histogram metrics can be very expensive for Prometheus
 // to retain and query. This function acts on the DefaultServerMetrics
 // variable and the default Prometheus metrics registry.
-func EnableHandlingTimeHistogram(opts ...HistogramOption) {
-	DefaultServerMetrics.EnableHandlingTimeHistogram(opts...)
-	prom.Register(DefaultServerMetrics.serverHandledHistogram)
+func DefaultEnableHandlingTimeHistogram(opts ...HistogramOption) {
+	EnableHandlingTimeHistogram(DefaultServerMetrics(), opts...)
+}
+
+func EnableHandlingTimeHistogram(serverMetrics *ServerMetrics, opts ...HistogramOption) {
+	serverMetrics.EnableHandlingTimeHistogram(opts...)
+	prom.Register(serverMetrics.serverHandledHistogram)
 }

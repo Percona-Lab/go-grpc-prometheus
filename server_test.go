@@ -58,15 +58,15 @@ type ServerInterceptorTestSuite struct {
 func (s *ServerInterceptorTestSuite) SetupSuite() {
 	var err error
 
-	EnableHandlingTimeHistogram()
+	DefaultEnableHandlingTimeHistogram()
 
 	s.serverListener, err = net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(s.T(), err, "must be able to allocate a port for serverListener")
 
 	// This is the point where we hook up the interceptor
 	s.server = grpc.NewServer(
-		grpc.StreamInterceptor(StreamServerInterceptor),
-		grpc.UnaryInterceptor(UnaryServerInterceptor),
+		grpc.StreamInterceptor(StreamServerInterceptor()),
+		grpc.UnaryInterceptor(UnaryServerInterceptor()),
 	)
 	pb_testproto.RegisterTestServiceServer(s.server, &testService{t: s.T()})
 
@@ -84,11 +84,11 @@ func (s *ServerInterceptorTestSuite) SetupTest() {
 	s.ctx, s.cancel = context.WithTimeout(context.TODO(), 2*time.Second)
 
 	// Make sure every test starts with same fresh, intialized metric state.
-	DefaultServerMetrics.serverStartedCounter.Reset()
-	DefaultServerMetrics.serverHandledCounter.Reset()
-	DefaultServerMetrics.serverHandledHistogram.Reset()
-	DefaultServerMetrics.serverStreamMsgReceived.Reset()
-	DefaultServerMetrics.serverStreamMsgSent.Reset()
+	DefaultServerMetrics().serverStartedCounter.Reset()
+	DefaultServerMetrics().serverHandledCounter.Reset()
+	DefaultServerMetrics().serverHandledHistogram.Reset()
+	DefaultServerMetrics().serverStreamMsgReceivedCounter.Reset()
+	DefaultServerMetrics().serverStreamMsgSentCounter.Reset()
 	Register(s.server)
 }
 
@@ -133,27 +133,27 @@ func (s *ServerInterceptorTestSuite) TestRegisterPresetsStuff() {
 func (s *ServerInterceptorTestSuite) TestUnaryIncrementsMetrics() {
 	_, err := s.testClient.PingEmpty(s.ctx, &pb_testproto.Empty{}) // should return with code=OK
 	require.NoError(s.T(), err)
-	requireValue(s.T(), 1, DefaultServerMetrics.serverStartedCounter.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingEmpty"))
-	requireValue(s.T(), 1, DefaultServerMetrics.serverHandledCounter.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingEmpty", "OK"))
-	requireValueHistCount(s.T(), 1, DefaultServerMetrics.serverHandledHistogram.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingEmpty"))
+	requireValue(s.T(), 1, DefaultServerMetrics().serverStartedCounter.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingEmpty"))
+	requireValue(s.T(), 1, DefaultServerMetrics().serverHandledCounter.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingEmpty", "OK"))
+	requireValueHistCount(s.T(), 1, DefaultServerMetrics().serverHandledHistogram.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingEmpty"))
 
 	_, err = s.testClient.PingError(s.ctx, &pb_testproto.PingRequest{ErrorCodeReturned: uint32(codes.FailedPrecondition)}) // should return with code=FailedPrecondition
 	require.Error(s.T(), err)
-	requireValue(s.T(), 1, DefaultServerMetrics.serverStartedCounter.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingError"))
-	requireValue(s.T(), 1, DefaultServerMetrics.serverHandledCounter.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingError", "FailedPrecondition"))
-	requireValueHistCount(s.T(), 1, DefaultServerMetrics.serverHandledHistogram.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingError"))
+	requireValue(s.T(), 1, DefaultServerMetrics().serverStartedCounter.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingError"))
+	requireValue(s.T(), 1, DefaultServerMetrics().serverHandledCounter.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingError", "FailedPrecondition"))
+	requireValueHistCount(s.T(), 1, DefaultServerMetrics().serverHandledHistogram.WithLabelValues("unary", "mwitkow.testproto.TestService", "PingError"))
 }
 
 func (s *ServerInterceptorTestSuite) TestStartedStreamingIncrementsStarted() {
 	_, err := s.testClient.PingList(s.ctx, &pb_testproto.PingRequest{})
 	require.NoError(s.T(), err)
 	requireValueWithRetry(s.ctx, s.T(), 1,
-		DefaultServerMetrics.serverStartedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
+		DefaultServerMetrics().serverStartedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
 
 	_, err = s.testClient.PingList(s.ctx, &pb_testproto.PingRequest{ErrorCodeReturned: uint32(codes.FailedPrecondition)}) // should return with code=FailedPrecondition
 	require.NoError(s.T(), err, "PingList must not fail immediately")
 	requireValueWithRetry(s.ctx, s.T(), 2,
-		DefaultServerMetrics.serverStartedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
+		DefaultServerMetrics().serverStartedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
 }
 
 func (s *ServerInterceptorTestSuite) TestStreamingIncrementsMetrics() {
@@ -171,25 +171,25 @@ func (s *ServerInterceptorTestSuite) TestStreamingIncrementsMetrics() {
 	require.EqualValues(s.T(), countListResponses, count, "Number of received msg on the wire must match")
 
 	requireValueWithRetry(s.ctx, s.T(), 1,
-		DefaultServerMetrics.serverStartedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
+		DefaultServerMetrics().serverStartedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
 	requireValueWithRetry(s.ctx, s.T(), 1,
-		DefaultServerMetrics.serverHandledCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList", "OK"))
+		DefaultServerMetrics().serverHandledCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList", "OK"))
 	requireValueWithRetry(s.ctx, s.T(), countListResponses,
-		DefaultServerMetrics.serverStreamMsgSent.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
+		DefaultServerMetrics().serverStreamMsgSentCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
 	requireValueWithRetry(s.ctx, s.T(), 1,
-		DefaultServerMetrics.serverStreamMsgReceived.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
+		DefaultServerMetrics().serverStreamMsgReceivedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
 	requireValueWithRetryHistCount(s.ctx, s.T(), 1,
-		DefaultServerMetrics.serverHandledHistogram.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
+		DefaultServerMetrics().serverHandledHistogram.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
 
 	_, err := s.testClient.PingList(s.ctx, &pb_testproto.PingRequest{ErrorCodeReturned: uint32(codes.FailedPrecondition)}) // should return with code=FailedPrecondition
 	require.NoError(s.T(), err, "PingList must not fail immediately")
 
 	requireValueWithRetry(s.ctx, s.T(), 2,
-		DefaultServerMetrics.serverStartedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
+		DefaultServerMetrics().serverStartedCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
 	requireValueWithRetry(s.ctx, s.T(), 1,
-		DefaultServerMetrics.serverHandledCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList", "FailedPrecondition"))
+		DefaultServerMetrics().serverHandledCounter.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList", "FailedPrecondition"))
 	requireValueWithRetryHistCount(s.ctx, s.T(), 2,
-		DefaultServerMetrics.serverHandledHistogram.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
+		DefaultServerMetrics().serverHandledHistogram.WithLabelValues("server_stream", "mwitkow.testproto.TestService", "PingList"))
 }
 
 // fetchPrometheusLines does mocked HTTP GET request against real prometheus handler to get the same view that Prometheus
