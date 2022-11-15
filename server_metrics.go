@@ -137,14 +137,10 @@ func (m *ServerMetrics) StreamServerInterceptor() func(srv interface{}, ss grpc.
 // value, for all gRPC methods registered on a gRPC server. This is useful, to
 // ensure that all metrics exist when collecting and querying.
 func (m *ServerMetrics) InitializeMetrics(server *grpc.Server) {
-	m.InitializeMetricsWithExtension(server, &NullExtension{})
-}
-
-func (m *ServerMetrics) InitializeMetricsWithExtension(server *grpc.Server, extension ServerExtension) {
 	serviceInfo := server.GetServiceInfo()
 	for serviceName, info := range serviceInfo {
 		for _, mInfo := range info.Methods {
-			preRegisterMethod(m, serviceName, &mInfo, extension)
+			preRegisterMethod(m, serviceName, &mInfo, m.extension)
 		}
 	}
 }
