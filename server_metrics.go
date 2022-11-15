@@ -68,17 +68,13 @@ func NewServerMetricsWithExtension(extension ServerExtension, counterOpts ...Cou
 // expensive on Prometheus servers. It takes options to configure histogram
 // options such as the defined buckets.
 func (m *ServerMetrics) EnableHandlingTimeHistogram(opts ...HistogramOption) {
-	m.EnableHandlingTimeHistogramWithExtension(&NullExtension{}, opts...)
-}
-
-func (m *ServerMetrics) EnableHandlingTimeHistogramWithExtension(extension ServerExtension, opts ...HistogramOption) {
 	for _, o := range opts {
 		o(&m.serverHandledHistogramOpts)
 	}
 	if !m.serverHandledHistogramEnabled {
 		m.serverHandledHistogram = prom.NewHistogramVec(
 			m.serverHandledHistogramOpts,
-			append(extension.ServerHandledHistogramCustomLabels(), "grpc_type", "grpc_service", "grpc_method"),
+			append(m.extension.ServerHandledHistogramCustomLabels(), "grpc_type", "grpc_service", "grpc_method"),
 		)
 	}
 	m.serverHandledHistogramEnabled = true
