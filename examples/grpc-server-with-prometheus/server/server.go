@@ -62,8 +62,8 @@ func main() {
 
 	// Create a gRPC Server with gRPC interceptor.
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
-		grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
+		grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor),
+		grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor),
 	)
 
 	// Create a new api server.
@@ -72,8 +72,7 @@ func main() {
 	// Register your service.
 	pb.RegisterDemoServiceServer(grpcServer, demoServer)
 
-	// Initialize all metrics.
-	grpcMetrics.InitializeMetrics(grpcServer)
+	grpc_prometheus.PrometheusMustRegister(grpcMetrics)
 
 	// Start your http server for prometheus.
 	go func() {
