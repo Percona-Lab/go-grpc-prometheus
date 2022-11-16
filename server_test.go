@@ -72,8 +72,8 @@ func (s *ServerInterceptorTestSuite) SetupSuite() {
 
 	// This is the point where we hook up the interceptor
 	s.server = grpc.NewServer(
-		grpc.StreamInterceptor(defaultServerMetrics.StreamServerInterceptor),
-		grpc.UnaryInterceptor(defaultServerMetrics.UnaryServerInterceptor),
+		grpc.StreamInterceptor(defaultServerMetrics.StreamServerInterceptor()),
+		grpc.UnaryInterceptor(defaultServerMetrics.UnaryServerInterceptor()),
 	)
 	pb_testproto.RegisterTestServiceServer(s.server, &testService{t: s.T()})
 

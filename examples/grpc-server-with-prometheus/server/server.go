@@ -62,8 +62,8 @@ func main() {
 
 	// Create a gRPC Server with gRPC interceptor.
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor),
-		grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor),
+		grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
+		grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
 	)
 
 	// Create a new api server.

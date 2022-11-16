@@ -18,7 +18,7 @@ type serverReporter struct {
 	startTime   time.Time
 }
 
-func newServerReporter(ctx context.Context, m *ServerMetrics, rpcType grpcType, fullMethod string) *serverReporter {
+func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string) *serverReporter {
 	r := &serverReporter{
 		metrics: m,
 		rpcType: rpcType,
@@ -27,10 +27,7 @@ func newServerReporter(ctx context.Context, m *ServerMetrics, rpcType grpcType, 
 		r.startTime = time.Now()
 	}
 	r.serviceName, r.methodName = splitMethodName(fullMethod)
-	r.metrics.serverStartedCounter.WithLabelValues(append(
-		r.metrics.extension.ServerStartedCounterValues(ctx),
-		string(r.rpcType), r.serviceName, r.methodName)...,
-	).Inc()
+	r.metrics.serverStartedCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Inc()
 	return r
 }
 

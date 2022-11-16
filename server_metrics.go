@@ -8,6 +8,41 @@ import (
 	"google.golang.org/grpc"
 )
 
+var (
+	// DefaultServerMetrics is the default instance of ServerMetrics. It is
+	// intended to be used in conjunction the default Prometheus metrics
+	// registry.
+	DefaultServerMetrics *ServerMetrics
+
+	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
+	UnaryServerInterceptor func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error)
+
+	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
+	StreamServerInterceptor func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error
+)
+
+func Configure() {
+	ConfigureWithExtension(emptyExtension)
+}
+
+func ConfigureWithExtension(extension ServerExtension) {
+	// DefaultServerMetrics is the default instance of ServerMetrics. It is
+	// intended to be used in conjunction the default Prometheus metrics
+	// registry.
+	DefaultServerMetrics = NewServerMetricsWithExtension(extension)
+
+	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
+	UnaryServerInterceptor = DefaultServerMetrics.UnaryServerInterceptor()
+
+	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
+	StreamServerInterceptor = DefaultServerMetrics.StreamServerInterceptor()
+
+	prom.MustRegister(DefaultServerMetrics.serverStartedCounter)
+	prom.MustRegister(DefaultServerMetrics.serverHandledCounter)
+	prom.MustRegister(DefaultServerMetrics.serverStreamMsgReceivedCounter)
+	prom.MustRegister(DefaultServerMetrics.serverStreamMsgSentCounter)
+}
+
 // ServerMetrics represents a collection of metrics to be registered on a
 // Prometheus metrics registry for a gRPC server.
 type ServerMetrics struct {
@@ -37,7 +72,7 @@ func NewServerMetricsWithExtension(extension ServerExtension, counterOpts ...Cou
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_started_total",
 				Help: "Total number of RPCs started on the server.",
-			}), append(extension.ServerStartedCounterCustomLabels(), "grpc_type", "grpc_service", "grpc_method")),
+			}), []string{"grpc_type", "grpc_service", "grpc_method"}),
 		serverHandledCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_handled_total",
@@ -111,25 +146,29 @@ func (m *ServerMetrics) Collect(ch chan<- prom.Metric) {
 }
 
 // UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-func (m *ServerMetrics) UnaryServerInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	monitor := newServerReporter(ctx, m, Unary, info.FullMethod)
-	monitor.ReceivedMessage(ctx)
-	resp, err := handler(ctx, req)
-	st, _ := grpcstatus.FromError(err)
-	monitor.Handled(ctx, st.Code())
-	if err == nil {
-		monitor.SentMessage(ctx)
+func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		monitor := newServerReporter(m, Unary, info.FullMethod)
+		monitor.ReceivedMessage(ctx)
+		resp, err := handler(ctx, req)
+		st, _ := grpcstatus.FromError(err)
+		monitor.Handled(ctx, st.Code())
+		if err == nil {
+			monitor.SentMessage(ctx)
+		}
+		return resp, err
 	}
-	return resp, err
 }
 
 // StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-func (m *ServerMetrics) StreamServerInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	monitor := newServerReporter(ss.Context(), m, streamRPCType(info), info.FullMethod)
-	err := handler(srv, &monitoredServerStream{ss, monitor})
-	st, _ := grpcstatus.FromError(err)
-	monitor.Handled(ss.Context(), st.Code())
-	return err
+func (m *ServerMetrics) StreamServerInterceptor() func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		monitor := newServerReporter(m, streamRPCType(info), info.FullMethod)
+		err := handler(srv, &monitoredServerStream{ss, monitor})
+		st, _ := grpcstatus.FromError(err)
+		monitor.Handled(ss.Context(), st.Code())
+		return err
+	}
 }
 
 func streamRPCType(info *grpc.StreamServerInfo) grpcType {
