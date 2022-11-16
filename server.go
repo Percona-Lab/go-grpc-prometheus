@@ -9,19 +9,10 @@ import (
 	prom "github.com/prometheus/client_golang/prometheus"
 )
 
-// PrometheusMustRegister when many servers with different const label
-func PrometheusMustRegister(serverMetrics *ServerMetrics) {
-	prom.MustRegister(serverMetrics.serverStartedCounter)
-	prom.MustRegister(serverMetrics.serverHandledCounter)
-	prom.MustRegister(serverMetrics.serverStreamMsgReceivedCounter)
-	prom.MustRegister(serverMetrics.serverStreamMsgSentCounter)
-}
-
-// EnableHandlingTimeHistogram turns on recording of handling time
-// of RPCs. Histogram metrics can be very expensive for Prometheus
-// to retain and query. This function acts on the DefaultServerMetrics
-// variable and the default Prometheus metrics registry.
-func EnableHandlingTimeHistogram(serverMetrics *ServerMetrics, opts ...HistogramOption) {
-	serverMetrics.EnableHandlingTimeHistogram(opts...)
-	prom.Register(serverMetrics.serverHandledHistogram)
+// MustRegister when many servers with different const label
+func (m *ServerMetrics) MustRegister() {
+	prom.MustRegister(m.serverStartedCounter)
+	prom.MustRegister(m.serverHandledCounter)
+	prom.MustRegister(m.serverStreamMsgReceivedCounter)
+	prom.MustRegister(m.serverStreamMsgSentCounter)
 }

@@ -44,7 +44,7 @@ var (
 )
 
 func init() {
-	PrometheusMustRegister(defaultServerMetrics)
+	defaultServerMetrics.MustRegister()
 }
 
 func TestServerInterceptorSuite(t *testing.T) {
@@ -65,7 +65,7 @@ type ServerInterceptorTestSuite struct {
 func (s *ServerInterceptorTestSuite) SetupSuite() {
 	var err error
 
-	EnableHandlingTimeHistogram(defaultServerMetrics)
+	defaultServerMetrics.EnableHandlingTimeHistogram()
 
 	s.serverListener, err = net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(s.T(), err, "must be able to allocate a port for serverListener")

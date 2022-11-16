@@ -72,7 +72,7 @@ func main() {
 	// Register your service.
 	pb.RegisterDemoServiceServer(grpcServer, demoServer)
 
-	grpc_prometheus.PrometheusMustRegister(grpcMetrics)
+	grpcMetrics.MustRegister()
 
 	// Start your http server for prometheus.
 	go func() {
