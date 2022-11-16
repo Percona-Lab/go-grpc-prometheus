@@ -17,6 +17,7 @@ type ServerMetrics struct {
 	serverStreamMsgReceivedCounter *prom.CounterVec
 	serverStreamMsgSentCounter     *prom.CounterVec
 	serverHandledHistogramEnabled  bool
+	serverHandledHistogramOpts     prom.HistogramOpts
 	serverHandledHistogram         *prom.HistogramVec
 }
 
@@ -53,7 +54,12 @@ func NewServerMetricsWithExtension(extension ServerExtension, counterOpts ...Cou
 				Help: "Total number of gRPC stream messages sent by the server.",
 			}), append(extension.ServerStreamMsgSentCounterCustomLabels(), "grpc_type", "grpc_service", "grpc_method")),
 		serverHandledHistogramEnabled: false,
-		serverHandledHistogram:        nil,
+		serverHandledHistogramOpts: prom.HistogramOpts{
+			Name:    "grpc_server_handling_seconds",
+			Help:    "Histogram of response latency (seconds) of gRPC that had been application-level handled by the server.",
+			Buckets: prom.DefBuckets,
+		},
+		serverHandledHistogram: nil,
 	}
 }
 
@@ -62,22 +68,15 @@ func NewServerMetricsWithExtension(extension ServerExtension, counterOpts ...Cou
 // expensive on Prometheus servers. It takes options to configure histogram
 // options such as the defined buckets.
 func (m *ServerMetrics) EnableHandlingTimeHistogram(opts ...HistogramOption) {
-	if m.serverHandledHistogramEnabled {
-		return
-	}
-
-	serverHandledHistogramOpts := prom.HistogramOpts{
-		Name:    "grpc_server_handling_seconds",
-		Help:    "Histogram of response latency (seconds) of gRPC that had been application-level handled by the server.",
-		Buckets: prom.DefBuckets,
-	}
 	for _, o := range opts {
-		o(&serverHandledHistogramOpts)
+		o(&m.serverHandledHistogramOpts)
 	}
-	m.serverHandledHistogram = prom.NewHistogramVec(
-		serverHandledHistogramOpts,
-		append(m.extension.ServerHandledHistogramCustomLabels(), "grpc_type", "grpc_service", "grpc_method"),
-	)
+	if !m.serverHandledHistogramEnabled {
+		m.serverHandledHistogram = prom.NewHistogramVec(
+			m.serverHandledHistogramOpts,
+			[]string{"grpc_type", "grpc_service", "grpc_method"},
+		)
+	}
 	m.serverHandledHistogramEnabled = true
 }
 
