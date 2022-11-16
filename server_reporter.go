@@ -18,7 +18,7 @@ type serverReporter struct {
 	startTime   time.Time
 }
 
-func newServerReporter(m *ServerMetrics, ctx context.Context, rpcType grpcType, fullMethod string) *serverReporter {
+func newServerReporter(ctx context.Context, m *ServerMetrics, rpcType grpcType, fullMethod string) *serverReporter {
 	r := &serverReporter{
 		metrics: m,
 		rpcType: rpcType,
