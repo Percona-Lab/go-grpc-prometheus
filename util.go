@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 )
 
 type grpcType string
@@ -17,15 +16,6 @@ const (
 	ClientStream grpcType = "client_stream"
 	ServerStream grpcType = "server_stream"
 	BidiStream   grpcType = "bidi_stream"
-)
-
-var (
-	allCodes = []codes.Code{
-		codes.OK, codes.Canceled, codes.Unknown, codes.InvalidArgument, codes.DeadlineExceeded, codes.NotFound,
-		codes.AlreadyExists, codes.PermissionDenied, codes.Unauthenticated, codes.ResourceExhausted,
-		codes.FailedPrecondition, codes.Aborted, codes.OutOfRange, codes.Unimplemented, codes.Internal,
-		codes.Unavailable, codes.DataLoss,
-	}
 )
 
 func splitMethodName(fullMethodName string) (string, string) {

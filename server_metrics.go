@@ -25,7 +25,7 @@ type ServerMetrics struct {
 // example when wanting to control which metrics are added to a registry as
 // opposed to automatically adding metrics via init functions.
 func NewServerMetrics(counterOpts ...CounterOption) *ServerMetrics {
-	return NewServerMetricsWithExtension(&NullExtension{}, counterOpts...)
+	return NewServerMetricsWithExtension(&DefaultExtension{}, counterOpts...)
 }
 
 func NewServerMetricsWithExtension(extension ServerExtension, counterOpts ...CounterOption) *ServerMetrics {
@@ -129,18 +129,6 @@ func (m *ServerMetrics) StreamServerInterceptor(srv interface{}, ss grpc.ServerS
 	return err
 }
 
-// InitializeMetrics initializes all metrics, with their appropriate null
-// value, for all gRPC methods registered on a gRPC server. This is useful, to
-// ensure that all metrics exist when collecting and querying.
-func (m *ServerMetrics) InitializeMetrics(server *grpc.Server) {
-	serviceInfo := server.GetServiceInfo()
-	for serviceName, info := range serviceInfo {
-		for _, mInfo := range info.Methods {
-			preRegisterMethod(m, serviceName, &mInfo, m.extension)
-		}
-	}
-}
-
 func streamRPCType(info *grpc.StreamServerInfo) grpcType {
 	if info.IsClientStream && !info.IsServerStream {
 		return ClientStream
@@ -170,55 +158,4 @@ func (s *monitoredServerStream) RecvMsg(m interface{}) error {
 		s.monitor.ReceivedMessage(context.Background())
 	}
 	return err
-}
-
-func preRegisterMethod(metrics *ServerMetrics, serviceName string, mInfo *grpc.MethodInfo, extension ServerExtension) {
-	methodName := mInfo.Name
-	methodType := string(typeFromMethodInfo(mInfo))
-	// These are just references (no increments), as just referencing will create the labels but not set values.
-	if len(extension.ServerStartedCounterCustomLabels()) == 0 {
-		metrics.serverStartedCounter.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	} else {
-		for _, values := range extension.ServerStartedCounterPreRegisterValues() {
-			metrics.serverStartedCounter.GetMetricWithLabelValues(append(values, methodType, serviceName, methodName)...)
-		}
-	}
-
-	if len(extension.ServerStreamMsgReceivedCounterCustomLabels()) == 0 {
-		metrics.serverStreamMsgReceivedCounter.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	} else {
-		for _, values := range extension.ServerStreamMsgReceivedCounterPreRegisterValues() {
-			metrics.serverStreamMsgReceivedCounter.GetMetricWithLabelValues(append(values, methodType, serviceName, methodName)...)
-		}
-	}
-
-	if len(extension.ServerStreamMsgSentCounterCustomLabels()) == 0 {
-		metrics.serverStreamMsgSentCounter.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	} else {
-		for _, values := range extension.ServerStreamMsgSentCounterPreRegisterValues() {
-			metrics.serverStreamMsgSentCounter.GetMetricWithLabelValues(append(values, methodType, serviceName, methodName)...)
-		}
-	}
-
-	if metrics.serverHandledHistogramEnabled {
-		if len(extension.ServerHandledHistogramCustomLabels()) == 0 {
-			metrics.serverHandledHistogram.GetMetricWithLabelValues(methodType, serviceName, methodName)
-		} else {
-			for _, values := range extension.ServerHandledHistogramPreRegisterValues() {
-				metrics.serverHandledHistogram.GetMetricWithLabelValues(append(values, methodType, serviceName, methodName)...)
-			}
-		}
-	}
-
-	if len(extension.ServerHandledCounterCustomLabels()) == 0 {
-		for _, code := range allCodes {
-			metrics.serverHandledCounter.GetMetricWithLabelValues(methodType, serviceName, methodName, code.String())
-		}
-	} else {
-		for _, values := range extension.ServerHandledCounterPreRegisterValues() {
-			for _, code := range allCodes {
-				metrics.serverHandledCounter.GetMetricWithLabelValues(append(values, methodType, serviceName, methodName, code.String())...)
-			}
-		}
-	}
 }
