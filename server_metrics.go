@@ -9,15 +9,11 @@ import (
 	"google.golang.org/grpc"
 )
 
-type UnaryServerInterceptorType = func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error)
-
-type StreamServerInterceptorType = func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error
-
 var (
 	lock                    sync.RWMutex
 	defaultServerMetrics    *ServerMetrics
-	unaryServerInterceptor  UnaryServerInterceptorType
-	streamServerInterceptor StreamServerInterceptorType
+	unaryServerInterceptor  grpc.UnaryServerInterceptor
+	streamServerInterceptor grpc.StreamServerInterceptor
 )
 
 // DefaultServerMetrics is the default instance of ServerMetrics. It is
@@ -31,7 +27,7 @@ func DefaultServerMetrics() *ServerMetrics {
 }
 
 // StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-func StreamServerInterceptor() StreamServerInterceptorType {
+func StreamServerInterceptor() grpc.StreamServerInterceptor {
 	if streamServerInterceptor == nil {
 		Configure()
 	}
@@ -39,7 +35,7 @@ func StreamServerInterceptor() StreamServerInterceptorType {
 	return streamServerInterceptor
 }
 
-func UnaryServerInterceptor() UnaryServerInterceptorType {
+func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	if unaryServerInterceptor == nil {
 		Configure()
 	}
