@@ -51,6 +51,9 @@ func Configure() {
 func ConfigureWithExtension(extension ServerExtension) {
 	lock.Lock()
 	defer lock.Unlock()
+	if defaultServerMetrics != nil {
+		return
+	}
 
 	// DefaultServerMetrics is the default instance of ServerMetrics. It is
 	// intended to be used in conjunction the default Prometheus metrics
