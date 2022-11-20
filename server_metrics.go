@@ -35,6 +35,7 @@ func StreamServerInterceptor() grpc.StreamServerInterceptor {
 	return streamServerInterceptor
 }
 
+// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
 func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	if unaryServerInterceptor == nil {
 		Configure()
@@ -42,8 +43,6 @@ func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 
 	return unaryServerInterceptor
 }
-
-// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
 
 func Configure() {
 	ConfigureWithExtension(emptyExtension)
