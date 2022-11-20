@@ -39,12 +39,8 @@ const (
 	countListResponses = 20
 )
 
-var (
-	defaultServerMetrics = NewServerMetrics()
-)
-
 func init() {
-	defaultServerMetrics.MustRegister()
+	Configure()
 }
 
 func TestServerInterceptorSuite(t *testing.T) {
