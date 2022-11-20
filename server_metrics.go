@@ -20,27 +20,19 @@ var (
 // intended to be used in conjunction the default Prometheus metrics
 // registry.
 func DefaultServerMetrics() *ServerMetrics {
-	if defaultServerMetrics == nil {
-		Configure()
-	}
+	Configure()
 	return defaultServerMetrics
 }
 
 // StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
 func StreamServerInterceptor() grpc.StreamServerInterceptor {
-	if streamServerInterceptor == nil {
-		Configure()
-	}
-
+	Configure()
 	return streamServerInterceptor
 }
 
 // UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
 func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	if unaryServerInterceptor == nil {
-		Configure()
-	}
-
+	Configure()
 	return unaryServerInterceptor
 }
 
