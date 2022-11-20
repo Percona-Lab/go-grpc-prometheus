@@ -8,18 +8,44 @@ import (
 	"google.golang.org/grpc"
 )
 
+type UnaryServerInterceptorType = func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error)
+
+type StreamServerInterceptorType = func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error
+
 var (
-	// DefaultServerMetrics is the default instance of ServerMetrics. It is
-	// intended to be used in conjunction the default Prometheus metrics
-	// registry.
-	DefaultServerMetrics *ServerMetrics
-
-	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-	UnaryServerInterceptor func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error)
-
-	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-	StreamServerInterceptor func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error
+	defaultServerMetrics    *ServerMetrics
+	unaryServerInterceptor  UnaryServerInterceptorType
+	streamServerInterceptor StreamServerInterceptorType
 )
+
+// DefaultServerMetrics is the default instance of ServerMetrics. It is
+// intended to be used in conjunction the default Prometheus metrics
+// registry.
+func DefaultServerMetrics() *ServerMetrics {
+	if defaultServerMetrics == nil {
+		Configure()
+	}
+	return defaultServerMetrics
+}
+
+// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
+func StreamServerInterceptor() StreamServerInterceptorType {
+	if streamServerInterceptor == nil {
+		Configure()
+	}
+
+	return streamServerInterceptor
+}
+
+func UnaryServerInterceptor() UnaryServerInterceptorType {
+	if unaryServerInterceptor == nil {
+		Configure()
+	}
+
+	return unaryServerInterceptor
+}
+
+// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
 
 func Configure() {
 	ConfigureWithExtension(emptyExtension)
@@ -29,18 +55,18 @@ func ConfigureWithExtension(extension ServerExtension) {
 	// DefaultServerMetrics is the default instance of ServerMetrics. It is
 	// intended to be used in conjunction the default Prometheus metrics
 	// registry.
-	DefaultServerMetrics = NewServerMetricsWithExtension(extension)
+	defaultServerMetrics = NewServerMetricsWithExtension(extension)
 
 	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-	UnaryServerInterceptor = DefaultServerMetrics.UnaryServerInterceptor()
+	unaryServerInterceptor = defaultServerMetrics.UnaryServerInterceptor()
 
 	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-	StreamServerInterceptor = DefaultServerMetrics.StreamServerInterceptor()
+	streamServerInterceptor = defaultServerMetrics.StreamServerInterceptor()
 
-	prom.MustRegister(DefaultServerMetrics.serverStartedCounter)
-	prom.MustRegister(DefaultServerMetrics.serverHandledCounter)
-	prom.MustRegister(DefaultServerMetrics.serverStreamMsgReceivedCounter)
-	prom.MustRegister(DefaultServerMetrics.serverStreamMsgSentCounter)
+	prom.MustRegister(defaultServerMetrics.serverStartedCounter)
+	prom.MustRegister(defaultServerMetrics.serverHandledCounter)
+	prom.MustRegister(defaultServerMetrics.serverStreamMsgReceivedCounter)
+	prom.MustRegister(defaultServerMetrics.serverStreamMsgSentCounter)
 }
 
 // ServerMetrics represents a collection of metrics to be registered on a
