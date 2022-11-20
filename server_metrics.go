@@ -14,7 +14,7 @@ type UnaryServerInterceptorType = func(ctx context.Context, req interface{}, inf
 type StreamServerInterceptorType = func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error
 
 var (
-	initOnce                sync.Once
+	lock                    sync.RWMutex
 	defaultServerMetrics    *ServerMetrics
 	unaryServerInterceptor  UnaryServerInterceptorType
 	streamServerInterceptor StreamServerInterceptorType
@@ -54,23 +54,24 @@ func Configure() {
 }
 
 func ConfigureWithExtension(extension ServerExtension) {
-	initOnce.Do(func() {
-		// DefaultServerMetrics is the default instance of ServerMetrics. It is
-		// intended to be used in conjunction the default Prometheus metrics
-		// registry.
-		defaultServerMetrics = NewServerMetricsWithExtension(extension)
+	lock.Lock()
+	defer lock.Unlock()
 
-		// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-		unaryServerInterceptor = defaultServerMetrics.UnaryServerInterceptor()
+	// DefaultServerMetrics is the default instance of ServerMetrics. It is
+	// intended to be used in conjunction the default Prometheus metrics
+	// registry.
+	defaultServerMetrics = NewServerMetricsWithExtension(extension)
 
-		// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-		streamServerInterceptor = defaultServerMetrics.StreamServerInterceptor()
+	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
+	unaryServerInterceptor = defaultServerMetrics.UnaryServerInterceptor()
 
-		prom.MustRegister(defaultServerMetrics.serverStartedCounter)
-		prom.MustRegister(defaultServerMetrics.serverHandledCounter)
-		prom.MustRegister(defaultServerMetrics.serverStreamMsgReceivedCounter)
-		prom.MustRegister(defaultServerMetrics.serverStreamMsgSentCounter)
-	})
+	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
+	streamServerInterceptor = defaultServerMetrics.StreamServerInterceptor()
+
+	prom.MustRegister(defaultServerMetrics.serverStartedCounter)
+	prom.MustRegister(defaultServerMetrics.serverHandledCounter)
+	prom.MustRegister(defaultServerMetrics.serverStreamMsgReceivedCounter)
+	prom.MustRegister(defaultServerMetrics.serverStreamMsgSentCounter)
 }
 
 // ServerMetrics represents a collection of metrics to be registered on a
