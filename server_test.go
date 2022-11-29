@@ -39,10 +39,6 @@ const (
 	countListResponses = 20
 )
 
-func init() {
-	Configure()
-}
-
 func TestServerInterceptorSuite(t *testing.T) {
 	suite.Run(t, &ServerInterceptorTestSuite{})
 }
@@ -60,6 +56,8 @@ type ServerInterceptorTestSuite struct {
 
 func (s *ServerInterceptorTestSuite) SetupSuite() {
 	var err error
+
+	Configure()
 
 	defaultServerMetrics.EnableHandlingTimeHistogram()
 
