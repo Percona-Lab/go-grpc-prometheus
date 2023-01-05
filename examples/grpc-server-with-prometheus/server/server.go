@@ -72,7 +72,8 @@ func main() {
 	// Register your service.
 	pb.RegisterDemoServiceServer(grpcServer, demoServer)
 
-	grpcMetrics.MustRegister()
+	// Initialize all metrics.
+	grpcMetrics.InitializeMetrics(grpcServer)
 
 	// Start your http server for prometheus.
 	go func() {

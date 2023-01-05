@@ -4,7 +4,6 @@
 package grpc_prometheus
 
 import (
-	"context"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -31,30 +30,17 @@ func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string) *s
 	return r
 }
 
-func (r *serverReporter) ReceivedMessage(ctx context.Context) {
-	r.metrics.serverStreamMsgReceivedCounter.WithLabelValues(append(
-		r.metrics.extension.ServerStreamMsgReceivedCounterValues(ctx),
-		string(r.rpcType), r.serviceName, r.methodName)...,
-	).Inc()
+func (r *serverReporter) ReceivedMessage() {
+	r.metrics.serverStreamMsgReceived.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Inc()
 }
 
-func (r *serverReporter) SentMessage(ctx context.Context) {
-	r.metrics.serverStreamMsgSentCounter.WithLabelValues(append(
-		r.metrics.extension.ServerStreamMsgSentCounterValues(ctx),
-		string(r.rpcType), r.serviceName, r.methodName)...,
-	).Inc()
+func (r *serverReporter) SentMessage() {
+	r.metrics.serverStreamMsgSent.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Inc()
 }
 
-func (r *serverReporter) Handled(ctx context.Context, code codes.Code) {
-	r.metrics.serverHandledCounter.WithLabelValues(append(
-		r.metrics.extension.ServerHandledCounterValues(ctx),
-		string(r.rpcType), r.serviceName, r.methodName, code.String())...,
-	).Inc()
-
+func (r *serverReporter) Handled(code codes.Code) {
+	r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String()).Inc()
 	if r.metrics.serverHandledHistogramEnabled {
-		r.metrics.serverHandledHistogram.WithLabelValues(append(
-			r.metrics.extension.ServerHandledHistogramValues(ctx),
-			string(r.rpcType), r.serviceName, r.methodName)...,
-		).Observe(time.Since(r.startTime).Seconds())
+		r.metrics.serverHandledHistogram.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Observe(time.Since(r.startTime).Seconds())
 	}
 }
