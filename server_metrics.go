@@ -4,20 +4,77 @@ import (
 	"context"
 	"github.com/grpc-ecosystem/go-grpc-prometheus/packages/grpcstatus"
 	prom "github.com/prometheus/client_golang/prometheus"
+	"sync"
 
 	"google.golang.org/grpc"
 )
 
+var (
+	lock                    sync.RWMutex
+	defaultServerMetrics    *ServerMetrics
+	unaryServerInterceptor  grpc.UnaryServerInterceptor
+	streamServerInterceptor grpc.StreamServerInterceptor
+)
+
+// DefaultServerMetrics is the default instance of ServerMetrics. It is
+// intended to be used in conjunction the default Prometheus metrics
+// registry.
+func DefaultServerMetrics() *ServerMetrics {
+	Configure()
+	return defaultServerMetrics
+}
+
+// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
+func StreamServerInterceptor() grpc.StreamServerInterceptor {
+	Configure()
+	return streamServerInterceptor
+}
+
+// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
+func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	Configure()
+	return unaryServerInterceptor
+}
+
+func Configure() {
+	ConfigureWithExtension(emptyExtension)
+}
+
+func ConfigureWithExtension(extension ServerExtension) {
+	lock.Lock()
+	defer lock.Unlock()
+	if defaultServerMetrics != nil {
+		return
+	}
+
+	// DefaultServerMetrics is the default instance of ServerMetrics. It is
+	// intended to be used in conjunction the default Prometheus metrics
+	// registry.
+	defaultServerMetrics = NewServerMetricsWithExtension(extension)
+
+	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
+	unaryServerInterceptor = defaultServerMetrics.UnaryServerInterceptor()
+
+	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
+	streamServerInterceptor = defaultServerMetrics.StreamServerInterceptor()
+
+	prom.MustRegister(defaultServerMetrics.serverStartedCounter)
+	prom.MustRegister(defaultServerMetrics.serverHandledCounter)
+	prom.MustRegister(defaultServerMetrics.serverStreamMsgReceivedCounter)
+	prom.MustRegister(defaultServerMetrics.serverStreamMsgSentCounter)
+}
+
 // ServerMetrics represents a collection of metrics to be registered on a
 // Prometheus metrics registry for a gRPC server.
 type ServerMetrics struct {
-	serverStartedCounter          *prom.CounterVec
-	serverHandledCounter          *prom.CounterVec
-	serverStreamMsgReceived       *prom.CounterVec
-	serverStreamMsgSent           *prom.CounterVec
-	serverHandledHistogramEnabled bool
-	serverHandledHistogramOpts    prom.HistogramOpts
-	serverHandledHistogram        *prom.HistogramVec
+	extension                      ServerExtension
+	serverStartedCounter           *prom.CounterVec
+	serverHandledCounter           *prom.CounterVec
+	serverStreamMsgReceivedCounter *prom.CounterVec
+	serverStreamMsgSentCounter     *prom.CounterVec
+	serverHandledHistogramEnabled  bool
+	serverHandledHistogramOpts     prom.HistogramOpts
+	serverHandledHistogram         *prom.HistogramVec
 }
 
 // NewServerMetrics returns a ServerMetrics object. Use a new instance of
@@ -25,8 +82,13 @@ type ServerMetrics struct {
 // example when wanting to control which metrics are added to a registry as
 // opposed to automatically adding metrics via init functions.
 func NewServerMetrics(counterOpts ...CounterOption) *ServerMetrics {
+	return NewServerMetricsWithExtension(&DefaultExtension{}, counterOpts...)
+}
+
+func NewServerMetricsWithExtension(extension ServerExtension, counterOpts ...CounterOption) *ServerMetrics {
 	opts := counterOptions(counterOpts)
 	return &ServerMetrics{
+		extension: extension,
 		serverStartedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_started_total",
@@ -36,17 +98,17 @@ func NewServerMetrics(counterOpts ...CounterOption) *ServerMetrics {
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_handled_total",
 				Help: "Total number of RPCs completed on the server, regardless of success or failure.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method", "grpc_code"}),
-		serverStreamMsgReceived: prom.NewCounterVec(
+			}), append(extension.ServerHandledCounterCustomLabels(), "grpc_type", "grpc_service", "grpc_method", "grpc_code")),
+		serverStreamMsgReceivedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_msg_received_total",
 				Help: "Total number of RPC stream messages received on the server.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method"}),
-		serverStreamMsgSent: prom.NewCounterVec(
+			}), append(extension.ServerStreamMsgReceivedCounterCustomLabels(), "grpc_type", "grpc_service", "grpc_method")),
+		serverStreamMsgSentCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_msg_sent_total",
 				Help: "Total number of gRPC stream messages sent by the server.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method"}),
+			}), append(extension.ServerStreamMsgSentCounterCustomLabels(), "grpc_type", "grpc_service", "grpc_method")),
 		serverHandledHistogramEnabled: false,
 		serverHandledHistogramOpts: prom.HistogramOpts{
 			Name:    "grpc_server_handling_seconds",
@@ -62,16 +124,20 @@ func NewServerMetrics(counterOpts ...CounterOption) *ServerMetrics {
 // expensive on Prometheus servers. It takes options to configure histogram
 // options such as the defined buckets.
 func (m *ServerMetrics) EnableHandlingTimeHistogram(opts ...HistogramOption) {
+	if m.serverHandledHistogramEnabled {
+		return // already enabled
+	}
+
 	for _, o := range opts {
 		o(&m.serverHandledHistogramOpts)
 	}
-	if !m.serverHandledHistogramEnabled {
-		m.serverHandledHistogram = prom.NewHistogramVec(
-			m.serverHandledHistogramOpts,
-			[]string{"grpc_type", "grpc_service", "grpc_method"},
-		)
-	}
+	m.serverHandledHistogram = prom.NewHistogramVec(
+		m.serverHandledHistogramOpts,
+		[]string{"grpc_type", "grpc_service", "grpc_method"},
+	)
 	m.serverHandledHistogramEnabled = true
+
+	prom.MustRegister(m.serverHandledHistogram)
 }
 
 // Describe sends the super-set of all possible descriptors of metrics
@@ -80,8 +146,8 @@ func (m *ServerMetrics) EnableHandlingTimeHistogram(opts ...HistogramOption) {
 func (m *ServerMetrics) Describe(ch chan<- *prom.Desc) {
 	m.serverStartedCounter.Describe(ch)
 	m.serverHandledCounter.Describe(ch)
-	m.serverStreamMsgReceived.Describe(ch)
-	m.serverStreamMsgSent.Describe(ch)
+	m.serverStreamMsgReceivedCounter.Describe(ch)
+	m.serverStreamMsgSentCounter.Describe(ch)
 	if m.serverHandledHistogramEnabled {
 		m.serverHandledHistogram.Describe(ch)
 	}
@@ -93,8 +159,8 @@ func (m *ServerMetrics) Describe(ch chan<- *prom.Desc) {
 func (m *ServerMetrics) Collect(ch chan<- prom.Metric) {
 	m.serverStartedCounter.Collect(ch)
 	m.serverHandledCounter.Collect(ch)
-	m.serverStreamMsgReceived.Collect(ch)
-	m.serverStreamMsgSent.Collect(ch)
+	m.serverStreamMsgReceivedCounter.Collect(ch)
+	m.serverStreamMsgSentCounter.Collect(ch)
 	if m.serverHandledHistogramEnabled {
 		m.serverHandledHistogram.Collect(ch)
 	}
@@ -104,12 +170,12 @@ func (m *ServerMetrics) Collect(ch chan<- prom.Metric) {
 func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		monitor := newServerReporter(m, Unary, info.FullMethod)
-		monitor.ReceivedMessage()
+		monitor.ReceivedMessage(ctx)
 		resp, err := handler(ctx, req)
 		st, _ := grpcstatus.FromError(err)
-		monitor.Handled(st.Code())
+		monitor.Handled(ctx, st.Code())
 		if err == nil {
-			monitor.SentMessage()
+			monitor.SentMessage(ctx)
 		}
 		return resp, err
 	}
@@ -121,20 +187,8 @@ func (m *ServerMetrics) StreamServerInterceptor() func(srv interface{}, ss grpc.
 		monitor := newServerReporter(m, streamRPCType(info), info.FullMethod)
 		err := handler(srv, &monitoredServerStream{ss, monitor})
 		st, _ := grpcstatus.FromError(err)
-		monitor.Handled(st.Code())
+		monitor.Handled(ss.Context(), st.Code())
 		return err
-	}
-}
-
-// InitializeMetrics initializes all metrics, with their appropriate null
-// value, for all gRPC methods registered on a gRPC server. This is useful, to
-// ensure that all metrics exist when collecting and querying.
-func (m *ServerMetrics) InitializeMetrics(server *grpc.Server) {
-	serviceInfo := server.GetServiceInfo()
-	for serviceName, info := range serviceInfo {
-		for _, mInfo := range info.Methods {
-			preRegisterMethod(m, serviceName, &mInfo)
-		}
 	}
 }
 
@@ -156,7 +210,7 @@ type monitoredServerStream struct {
 func (s *monitoredServerStream) SendMsg(m interface{}) error {
 	err := s.ServerStream.SendMsg(m)
 	if err == nil {
-		s.monitor.SentMessage()
+		s.monitor.SentMessage(s.ServerStream.Context())
 	}
 	return err
 }
@@ -164,23 +218,7 @@ func (s *monitoredServerStream) SendMsg(m interface{}) error {
 func (s *monitoredServerStream) RecvMsg(m interface{}) error {
 	err := s.ServerStream.RecvMsg(m)
 	if err == nil {
-		s.monitor.ReceivedMessage()
+		s.monitor.ReceivedMessage(s.ServerStream.Context())
 	}
 	return err
-}
-
-// preRegisterMethod is invoked on Register of a Server, allowing all gRPC services labels to be pre-populated.
-func preRegisterMethod(metrics *ServerMetrics, serviceName string, mInfo *grpc.MethodInfo) {
-	methodName := mInfo.Name
-	methodType := string(typeFromMethodInfo(mInfo))
-	// These are just references (no increments), as just referencing will create the labels but not set values.
-	metrics.serverStartedCounter.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	metrics.serverStreamMsgReceived.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	metrics.serverStreamMsgSent.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	if metrics.serverHandledHistogramEnabled {
-		metrics.serverHandledHistogram.GetMetricWithLabelValues(methodType, serviceName, methodName)
-	}
-	for _, code := range allCodes {
-		metrics.serverHandledCounter.GetMetricWithLabelValues(methodType, serviceName, methodName, code.String())
-	}
 }
