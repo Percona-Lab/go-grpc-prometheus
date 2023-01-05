@@ -4,65 +4,9 @@ import (
 	"context"
 	"github.com/grpc-ecosystem/go-grpc-prometheus/packages/grpcstatus"
 	prom "github.com/prometheus/client_golang/prometheus"
-	"sync"
 
 	"google.golang.org/grpc"
 )
-
-var (
-	lock                    sync.RWMutex
-	defaultServerMetrics    *ServerMetrics
-	unaryServerInterceptor  grpc.UnaryServerInterceptor
-	streamServerInterceptor grpc.StreamServerInterceptor
-)
-
-// DefaultServerMetrics is the default instance of ServerMetrics. It is
-// intended to be used in conjunction the default Prometheus metrics
-// registry.
-func DefaultServerMetrics() *ServerMetrics {
-	Configure()
-	return defaultServerMetrics
-}
-
-// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-func StreamServerInterceptor() grpc.StreamServerInterceptor {
-	Configure()
-	return streamServerInterceptor
-}
-
-// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	Configure()
-	return unaryServerInterceptor
-}
-
-func Configure() {
-	ConfigureWithExtension(emptyExtension)
-}
-
-func ConfigureWithExtension(extension ServerExtension) {
-	lock.Lock()
-	defer lock.Unlock()
-	if defaultServerMetrics != nil {
-		return
-	}
-
-	// DefaultServerMetrics is the default instance of ServerMetrics. It is
-	// intended to be used in conjunction the default Prometheus metrics
-	// registry.
-	defaultServerMetrics = NewServerMetricsWithExtension(extension)
-
-	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
-	unaryServerInterceptor = defaultServerMetrics.UnaryServerInterceptor()
-
-	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-	streamServerInterceptor = defaultServerMetrics.StreamServerInterceptor()
-
-	prom.MustRegister(defaultServerMetrics.serverStartedCounter)
-	prom.MustRegister(defaultServerMetrics.serverHandledCounter)
-	prom.MustRegister(defaultServerMetrics.serverStreamMsgReceivedCounter)
-	prom.MustRegister(defaultServerMetrics.serverStreamMsgSentCounter)
-}
 
 // ServerMetrics represents a collection of metrics to be registered on a
 // Prometheus metrics registry for a gRPC server.
@@ -124,20 +68,16 @@ func NewServerMetricsWithExtension(extension ServerExtension, counterOpts ...Cou
 // expensive on Prometheus servers. It takes options to configure histogram
 // options such as the defined buckets.
 func (m *ServerMetrics) EnableHandlingTimeHistogram(opts ...HistogramOption) {
-	if m.serverHandledHistogramEnabled {
-		return // already enabled
-	}
-
 	for _, o := range opts {
 		o(&m.serverHandledHistogramOpts)
 	}
-	m.serverHandledHistogram = prom.NewHistogramVec(
-		m.serverHandledHistogramOpts,
-		[]string{"grpc_type", "grpc_service", "grpc_method"},
-	)
+	if !m.serverHandledHistogramEnabled {
+		m.serverHandledHistogram = prom.NewHistogramVec(
+			m.serverHandledHistogramOpts,
+			[]string{"grpc_type", "grpc_service", "grpc_method"},
+		)
+	}
 	m.serverHandledHistogramEnabled = true
-
-	prom.MustRegister(m.serverHandledHistogram)
 }
 
 // Describe sends the super-set of all possible descriptors of metrics
@@ -192,6 +132,18 @@ func (m *ServerMetrics) StreamServerInterceptor() func(srv interface{}, ss grpc.
 	}
 }
 
+// InitializeMetrics initializes all metrics, with their appropriate null
+// value, for all gRPC methods registered on a gRPC server. This is useful, to
+// ensure that all metrics exist when collecting and querying.
+func (m *ServerMetrics) InitializeMetrics(server *grpc.Server) {
+	serviceInfo := server.GetServiceInfo()
+	for serviceName, info := range serviceInfo {
+		for _, mInfo := range info.Methods {
+			preRegisterMethod(m, serviceName, &mInfo)
+		}
+	}
+}
+
 func streamRPCType(info *grpc.StreamServerInfo) grpcType {
 	if info.IsClientStream && !info.IsServerStream {
 		return ClientStream
@@ -221,4 +173,20 @@ func (s *monitoredServerStream) RecvMsg(m interface{}) error {
 		s.monitor.ReceivedMessage(s.ServerStream.Context())
 	}
 	return err
+}
+
+// preRegisterMethod is invoked on Register of a Server, allowing all gRPC services labels to be pre-populated.
+func preRegisterMethod(metrics *ServerMetrics, serviceName string, mInfo *grpc.MethodInfo) {
+	methodName := mInfo.Name
+	methodType := string(typeFromMethodInfo(mInfo))
+	// These are just references (no increments), as just referencing will create the labels but not set values.
+	metrics.serverStartedCounter.GetMetricWithLabelValues(methodType, serviceName, methodName)
+	metrics.serverStreamMsgReceivedCounter.GetMetricWithLabelValues(methodType, serviceName, methodName)
+	metrics.serverStreamMsgSentCounter.GetMetricWithLabelValues(methodType, serviceName, methodName)
+	if metrics.serverHandledHistogramEnabled {
+		metrics.serverHandledHistogram.GetMetricWithLabelValues(methodType, serviceName, methodName)
+	}
+	for _, code := range allCodes {
+		metrics.serverHandledCounter.GetMetricWithLabelValues(methodType, serviceName, methodName, code.String())
+	}
 }
