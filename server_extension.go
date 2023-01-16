@@ -3,6 +3,8 @@ package grpc_prometheus
 import "context"
 
 type ServerExtension interface {
+	MetricsNameAdjust(name string) string
+
 	ServerHandledCounterCustomLabels() []string
 	ServerHandledCounterValues(ctx context.Context) []string
 
@@ -20,6 +22,10 @@ type DefaultExtension struct {
 }
 
 var emptyExtension ServerExtension = DefaultExtension{}
+
+func (e DefaultExtension) MetricsNameAdjust(name string) string {
+	return name
+}
 
 func (DefaultExtension) ServerHandledCounterCustomLabels() []string {
 	return nil

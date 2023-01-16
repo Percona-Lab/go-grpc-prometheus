@@ -35,27 +35,27 @@ func NewServerMetricsWithExtension(extension ServerExtension, counterOpts ...Cou
 		extension: extension,
 		serverStartedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
-				Name: "grpc_server_started_total",
+				Name: extension.MetricsNameAdjust("grpc_server_started_total"),
 				Help: "Total number of RPCs started on the server.",
 			}), []string{"grpc_type", "grpc_service", "grpc_method"}),
 		serverHandledCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
-				Name: "grpc_server_handled_total",
+				Name: extension.MetricsNameAdjust("grpc_server_handled_total"),
 				Help: "Total number of RPCs completed on the server, regardless of success or failure.",
 			}), append(extension.ServerHandledCounterCustomLabels(), "grpc_type", "grpc_service", "grpc_method", "grpc_code")),
 		serverStreamMsgReceivedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
-				Name: "grpc_server_msg_received_total",
+				Name: extension.MetricsNameAdjust("grpc_server_msg_received_total"),
 				Help: "Total number of RPC stream messages received on the server.",
 			}), append(extension.ServerStreamMsgReceivedCounterCustomLabels(), "grpc_type", "grpc_service", "grpc_method")),
 		serverStreamMsgSentCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
-				Name: "grpc_server_msg_sent_total",
+				Name: extension.MetricsNameAdjust("grpc_server_msg_sent_total"),
 				Help: "Total number of gRPC stream messages sent by the server.",
 			}), append(extension.ServerStreamMsgSentCounterCustomLabels(), "grpc_type", "grpc_service", "grpc_method")),
 		serverHandledHistogramEnabled: false,
 		serverHandledHistogramOpts: prom.HistogramOpts{
-			Name:    "grpc_server_handling_seconds",
+			Name:    extension.MetricsNameAdjust("grpc_server_handling_seconds"),
 			Help:    "Histogram of response latency (seconds) of gRPC that had been application-level handled by the server.",
 			Buckets: prom.DefBuckets,
 		},
